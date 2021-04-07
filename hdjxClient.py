@@ -76,7 +76,7 @@ class Client(object):
                 print(f"Login failed due to: {prompt}")
                 TTShituRecognizer.get_instance().report_last_error()
                 self._driver.switch_to.alert.dismiss()
-            except (NoAlertPresentException, TimeoutError):
+            except (NoAlertPresentException, TimeoutException):
                 print("Login succeeded.")
                 return
             finally:
