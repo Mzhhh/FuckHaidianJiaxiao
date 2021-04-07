@@ -1,9 +1,8 @@
-import os
 import sys
 import time
 import json
 import base64
-from random import choice
+from random import choice, random
 
 from config import TaskList
 from recognizer import TTShituRecognizer
@@ -59,6 +58,10 @@ class Client(object):
         options = webdriver.ChromeOptions()
         options.add_argument("--ignore-certificate-errors")
         options.add_argument("--test-type")
+        if sys.platform.startswith('linux'):
+            options.add_argument('--headless')
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
         driver = webdriver.Chrome(ChromeDriverManager().install(), chrome_options=options)
         return driver
 
@@ -72,6 +75,7 @@ class Client(object):
             try:
                 self._oauth_login_inner()
                 WebDriverWait(self._driver, 2).until(EC.alert_is_present())
+                self._sleep_rand()
                 prompt = self._driver.switch_to.alert.text
                 print(f"Login failed due to: {prompt}")
                 TTShituRecognizer.get_instance().report_last_error()
@@ -88,12 +92,16 @@ class Client(object):
         self._driver.get(Client._ELECT_URL)
         if self._driver.current_url != Client._ELECT_URL:
             raise ClientNeedsLogin
+        self._sleep_rand()
             
 
     def _oauth_login_inner(self):
         self._driver.get(Client._BASE_URL)
+        self._sleep_rand()
         self._driver.find_element_by_id('txtUserName').send_keys(self._account.username)
+        self._sleep_rand()
         self._driver.find_element_by_id('txtPassword').send_keys(self._account.password)
+        self._sleep_rand()
         
         recognizer = TTShituRecognizer.get_instance()
         valid_elem = self._driver.find_element_by_id("ValidIMG")
@@ -111,7 +119,9 @@ class Client(object):
         recog_result = recognizer.recognize(base64.b64decode(img_captcha_base64))
 
         self._driver.find_element_by_id('txtIMGCode').send_keys(recog_result)
+        self._sleep_rand()
         self._driver.find_element_by_id('BtnLogin').click()
+        self._sleep_rand()
 
     def _get_available_session(self):
         for elem in self._driver.find_elements_by_class_name("CellCar"):
@@ -134,7 +144,7 @@ class Client(object):
 
     def _try_elect(self, elem):
         print("Trying to elect...")
-        time.sleep(0.1)
+        self._sleep_rand()
         elem.click()
         WebDriverWait(self._driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, 'DivCNBH')))
         avail_cars = self._driver.find_elements_by_class_name("DivCNBH")
@@ -142,13 +152,16 @@ class Client(object):
         if not avail_cars:
             return False
         car = choice(avail_cars)
+        self._sleep_rand()
         car.click()
         try:
             WebDriverWait(self._driver, 2).until(EC.alert_is_present())
+            self._sleep_rand()
             prompt = self._driver.switch_to.alert.text
             assert prompt == "确定预约该时段训练吗?"
             self._driver.switch_to.alert.accept()
             WebDriverWait(self._driver, 5).until(EC.alert_is_present())
+            self._sleep_rand()
             prompt = self._driver.switch_to.alert.text
             assert prompt == "预约成功!"
             self._driver.switch_to.alert.dismiss()
@@ -188,4 +201,8 @@ class Client(object):
         print("Done!")
 
     def close(self):
-        self._driver.close()
+        self._driver.quit()
+
+    def _sleep_rand(self):
+        sec = self._config.get("randomWait", 0.5)
+        time.sleep(sec*(random()+0.2))
