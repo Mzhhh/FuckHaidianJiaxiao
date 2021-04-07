@@ -1,0 +1,6 @@
+accounts.json
+config.ini
+
+test*
+.ipynb_checkpoint*
+__pycache__*
