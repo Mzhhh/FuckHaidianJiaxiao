@@ -179,6 +179,10 @@ class Client(object):
         while self._tasks:
             try:
                 print(f"{'-'*8} Entering loop {loop_counter} {'-'*8}")
+                if not self._check_time():
+                    print("Website not in service time...")
+                    time.sleep(60)
+                    continue
                 if need_login:
                     self._oauth_login()
                     need_login = False
@@ -190,19 +194,27 @@ class Client(object):
                     if success_flag:
                         task.finished = True
                 self._tasks.remove_finished()
-                time.sleep(self._config.get("refreshInterval", 5))
-                loop_counter += 1
+                time.sleep(self._config.get("refreshinterval", 5))
             except KeyboardInterrupt as e:
-                raise e
+                print("KeyboardInterrupt received.")
+                break
             except ClientNeedsLogin:
                 del self._driver
                 self._driver = self._get_driver()
                 need_login = True
-        print("Done!")
+            finally:
+                loop_counter += 1
+        else:
+            print("Done!")
 
     def close(self):
         self._driver.quit()
 
     def _sleep_rand(self):
-        sec = self._config.get("randomWait", 0.5)
+        sec = self._config.get("randomwait", 0.5)
         time.sleep(sec*(random()+0.2))
+
+    def _check_time(self, start_time=(7, 35, 30), end_time=(21, 59, 30)):
+        tlocal = time.localtime()
+        tlocal_time = (tlocal.tm_hour, tlocal.tm_min, tlocal.tm_sec)
+        return start_time <= tlocal_time <= end_time

@@ -45,5 +45,13 @@ class Parser(object):
     
     def parse_config(self, tag="client"):
         keys = self._parser.options(tag)
-        return {key: self._parser.get(tag, key) for key in keys}
+        config = dict()
+        for k in keys:
+            raw = self._parser.get(tag, k)
+            try:
+                raw = float(raw)
+            except:
+                pass
+            finally:
+                config[k] = raw
         
