@@ -144,7 +144,7 @@ class Client(object):
         return None
 
     def _try_elect(self, elem):
-        print("Trying to elect...")
+        print(f"Trying to elect...")
         self._sleep_rand()
         elem.click()
         WebDriverWait(self._driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, 'DivCNBH')))
@@ -152,7 +152,8 @@ class Client(object):
         print(f"Available cars: {' '.join([c.text for c in avail_cars])}")
         if not avail_cars:
             return False
-        car = choice(avail_cars)
+        car = sorted(avail_cars, key=lambda e: e.text, reverse=True)[0]
+        print(f"Selected car: {car.text}")
         self._sleep_rand()
         car.click()
         try:
@@ -215,7 +216,7 @@ class Client(object):
         sec = self._config.get("randomwait", 0.5)
         time.sleep(sec*(random()+0.2))
 
-    def _check_time(self, start_time=(7, 35, 30), end_time=(21, 59, 30)):
+    def _check_time(self, start_time=(7, 35, 20), end_time=(21, 59, 20)):
         tlocal = time.localtime()
         tlocal_time = (tlocal.tm_hour, tlocal.tm_min, tlocal.tm_sec)
         return start_time <= tlocal_time <= end_time
