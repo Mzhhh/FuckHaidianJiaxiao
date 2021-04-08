@@ -92,6 +92,7 @@ class Client(object):
         self._driver.get(Client._ELECT_URL)
         if self._driver.current_url != Client._ELECT_URL:
             raise ClientNeedsLogin
+        WebDriverWait(self._driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, "CellCar")))
         self._sleep_rand()
             
 
@@ -110,7 +111,7 @@ class Client(object):
             ele.addEventListener('load', function fn(){
             ele.removeEventListener('load', fn, false);
             var cnv = document.createElement('canvas');
-            cnv.width = this.width; cnv.height = this.height;
+            cnv.width = this.width * 0.7; cnv.height = this.height * 0.7;
             cnv.getContext('2d').drawImage(this, 0, 0);
             callback(cnv.toDataURL('image/jpeg').substring(22));
             }, false);

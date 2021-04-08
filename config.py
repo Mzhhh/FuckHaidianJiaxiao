@@ -54,4 +54,5 @@ class Parser(object):
                 pass
             finally:
                 config[k] = raw
+        return config
         
