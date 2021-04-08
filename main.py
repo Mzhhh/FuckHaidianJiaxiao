@@ -8,8 +8,12 @@ def main():
     client = Client(config)
     tasks = parser.parse_tasks()
     client.register_task(tasks)
-    client.execute()
-    client.close()
+    try:
+        client.execute()
+    except Exception as e:
+        raise e
+    finally:
+        client.close()
 
 if __name__ == "__main__":
     main()

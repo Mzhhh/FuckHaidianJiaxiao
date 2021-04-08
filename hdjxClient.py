@@ -36,6 +36,9 @@ class HJConfig(object):
 class ClientNeedsLogin(Exception):
     pass
 
+class ServiceUnavailable(Exception):
+    pass
+
 class Client(object):
 
     _BASE_URL = "http://haijia.bjxueche.net/"
@@ -78,6 +81,8 @@ class Client(object):
                 self._sleep_rand()
                 prompt = self._driver.switch_to.alert.text
                 print(f"Login failed due to: {prompt}")
+                if prompt.startswith("系统服务时间"):
+                    raise ServiceUnavailable
                 TTShituRecognizer.get_instance().report_last_error()
                 self._driver.switch_to.alert.dismiss()
             except (NoAlertPresentException, TimeoutException):
@@ -172,7 +177,8 @@ class Client(object):
         except (NoAlertPresentException, TimeoutException):
             print("Failed!")
             return False
-        except:
+        except Exception as e:
+            print(f"Exception {e} occured. Try to relogin.")
             raise ClientNeedsLogin
             
     def execute(self):
@@ -181,10 +187,7 @@ class Client(object):
         while self._tasks:
             try:
                 print(f"{'-'*8} Entering loop {loop_counter} {'-'*8}")
-                if not self._check_time():
-                    print("Website not in service time...")
-                    time.sleep(60)
-                    continue
+                self._check_time()
                 if need_login:
                     self._oauth_login()
                     need_login = False
@@ -204,6 +207,9 @@ class Client(object):
                 del self._driver
                 self._driver = self._get_driver()
                 need_login = True
+            except ServiceUnavailable:
+                print("Service unavailable.")
+                time.sleep(60)
             finally:
                 loop_counter += 1
         else:
@@ -219,4 +225,6 @@ class Client(object):
     def _check_time(self, start_time=(7, 35, 20), end_time=(21, 59, 20)):
         tlocal = time.localtime()
         tlocal_time = (tlocal.tm_hour, tlocal.tm_min, tlocal.tm_sec)
-        return start_time <= tlocal_time <= end_time
+        print("Current time: {:2d}:{:2d}:{:2d}".format(*tlocal_time))
+        if not start_time <= tlocal_time <= end_time:
+            raise ServiceUnavailable
