@@ -4,3 +4,4 @@ config.ini
 test*
 .ipynb_checkpoint*
 __pycache__*
+.DS_Store
