@@ -1,8 +1,12 @@
+import re
 import sys
 import time
 import json
 import base64
 from random import choice, random
+from datetime import datetime, timedelta
+
+import requests
 
 from config import TaskList
 from recognizer import TTShituRecognizer
@@ -49,6 +53,8 @@ class Client(object):
         self._config = config
         self._driver = self._get_driver()
         self._tasks = None
+        self._loop_counter = 0
+        self._time_adjustment = None
 
     def _get_driver(self):
         webdriver = self._config.get("webdriver", "None")
@@ -182,12 +188,11 @@ class Client(object):
             raise ClientNeedsLogin
             
     def execute(self):
-        loop_counter = 0
         need_login = True
         while self._tasks:
             try:
-                print(f"{'-'*8} Entering loop {loop_counter} {'-'*8}")
-                self._check_time()
+                print(f"{'-'*8} Entering loop {self._loop_counter} {'-'*8}")
+                loop_time = self._check_time()
                 if need_login:
                     self._oauth_login()
                     need_login = False
@@ -209,9 +214,12 @@ class Client(object):
                 need_login = True
             except ServiceUnavailable:
                 print("Service unavailable.")
-                time.sleep(60)
+                if (7, 30, 0) <= loop_time <= (21, 59, 30):
+                    time.sleep(5)
+                else:
+                    time.sleep(180)
             finally:
-                loop_counter += 1
+                self._loop_counter += 1
         else:
             print("Done!")
 
@@ -222,9 +230,28 @@ class Client(object):
         sec = self._config.get("randomwait", 0.5)
         time.sleep(sec*(random()+0.2))
 
-    def _check_time(self, start_time=(7, 35, 20), end_time=(21, 59, 20)):
-        tlocal = time.localtime()
-        tlocal_time = (tlocal.tm_hour, tlocal.tm_min, tlocal.tm_sec)
-        print("Current time: {:2d}:{:2d}:{:2d}".format(*tlocal_time))
-        if not start_time <= tlocal_time <= end_time:
+    def _check_time(self, start_time=(7, 35, 5), end_time=(21, 59, 30)):
+        server_time = self._get_server_time()
+        print(f"Current time: {server_time.strftime('%H:%M:%S')}")
+        server_ts = (server_time.hour, server_time.minute, server_time.second)
+        if not start_time <= server_ts <= end_time:
             raise ServiceUnavailable
+        return server_ts
+
+    def _get_server_time(self):
+        if self._time_adjustment and self._loop_counter % 5 != 0:
+            return datetime.now() + self._time_adjustment
+        print("Fetching server time...")
+        try:
+            local_time = datetime.now()
+            resp = requests.get(Client._BASE_URL, timeout=10)
+            assert(resp.status_code == 200)
+            server_time = datetime.strptime(resp.headers['Date'], "%a, %d %b %Y %H:%M:%S %Z") + timedelta(hours=8)
+            self._time_adjustment = server_time - local_time
+            print(f"Time delta: {self._time_adjustment}")
+            return server_time
+        except TimeoutError:
+            print("Failed. Time delta unchanged...")
+            return datetime.now() + self._time_adjustment
+        
+        
