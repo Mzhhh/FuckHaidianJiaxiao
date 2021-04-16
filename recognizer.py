@@ -35,16 +35,16 @@ class TTShituRecognizer(object):
         self._config = APIConfig()
         self._cache = None  # previous result
 
-    def recognize(self, raw):
+    def recognize(self, raw, enhanced=False):
         encode = TTShituRecognizer._to_b64(raw)
         data = {
             "username": self._config.uname, 
             "password": self._config.pwd,
             "image": encode
         }
-        if self._config.get('enhanced_mode', False):  # “无感学习” 模式
+        if enhanced:  # “无感学习” 模式
             data["typeid"] = 7
-            data["typename"] = "elective"
+            data["typename"] = "hdjx"
         try:
             result = json.loads(requests.post(TTShituRecognizer._RECOGNIZER_URL, json=data, timeout=20).text)
         except requests.Timeout:

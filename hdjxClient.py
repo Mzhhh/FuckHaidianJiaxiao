@@ -103,7 +103,11 @@ class Client(object):
         self._driver.get(Client._ELECT_URL)
         if self._driver.current_url != Client._ELECT_URL:
             raise ClientNeedsLogin
-        WebDriverWait(self._driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, "CellCar")))
+        try:
+            WebDriverWait(self._driver, 5).until(EC.visibility_of_element_located((By.CLASS_NAME, "CellCar")))
+        except TimeoutException:
+            status = self._handle_ban()
+            assert status, "No ban detected"
         self._sleep_rand()
             
 
@@ -193,6 +197,8 @@ class Client(object):
             try:
                 print(f"{'-'*8} Entering loop {self._loop_counter} {'-'*8}")
                 loop_time = self._check_time()
+                self._sleep_rand()
+                self._tasks.report()
                 if need_login:
                     self._oauth_login()
                     need_login = False
@@ -204,11 +210,12 @@ class Client(object):
                     if success_flag:
                         task.finished = True
                 self._tasks.remove_finished()
-                time.sleep(self._config.get("refreshinterval", 5))
+                self._sleep_loop()
             except KeyboardInterrupt as e:
                 print("KeyboardInterrupt received.")
                 break
             except ClientNeedsLogin:
+                print("Client needs to relogin...")
                 del self._driver
                 self._driver = self._get_driver()
                 need_login = True
@@ -230,6 +237,9 @@ class Client(object):
         sec = self._config.get("randomwait", 0.5)
         time.sleep(sec*(random()+0.2))
 
+    def _sleep_loop(self):
+        time.sleep(self._config.get("refreshinterval", 10))
+
     def _check_time(self, start_time=(7, 35, 5), end_time=(21, 59, 30)):
         server_time = self._get_server_time()
         print(f"Current time: {server_time.strftime('%H:%M:%S')}")
@@ -239,7 +249,7 @@ class Client(object):
         return server_ts
 
     def _get_server_time(self):
-        if self._time_adjustment and self._loop_counter % 5 != 0:
+        if self._time_adjustment and self._loop_counter % 10 != 0:
             return datetime.now() + self._time_adjustment
         print("Fetching server time...")
         try:
@@ -253,5 +263,38 @@ class Client(object):
         except TimeoutError:
             print("Failed. Time delta unchanged...")
             return datetime.now() + self._time_adjustment
+
+    def _handle_ban(self, max_retry=5):
+        try:
+            title_elem = self._driver.find_element_by_id("intitle")
+            assert title_elem.text == "您的访问出错了"
+        except:
+            return False 
+        print("Trying to lift the ban...")
+        retry = max_retry
+        while retry:
+            try:
+                self._handle_ban_inner()
+                WebDriverWait(self._driver, 2).until(EC.alert_is_present())
+                self._sleep_rand()
+                prompt = self._driver.switch_to.alert.text
+                print(f"Validation failed: {prompt}")
+                TTShituRecognizer.get_instance().report_last_error()
+                self._driver.switch_to.alert.dismiss()
+            except (NoAlertPresentException, TimeoutException):
+                print("Ban lifted.")
+                return True
+            finally:
+                retry -= 1
+        raise RuntimeError("Recognizer max retry exceeded")
         
+    def _handle_ban_inner(self):
+        recognizer = TTShituRecognizer.get_instance()
+        valid_elem = self._driver.find_element_by_xpath('//*[@id="content"]/img')    
+        img_captcha_base64 = valid_elem.get_attribute("src").split("base64,")[-1]
+        recog_result = recognizer.recognize(base64.b64decode(img_captcha_base64), enhanced=True)
+        self._driver.find_element_by_id('vcode').send_keys(recog_result)
+        self._sleep_rand()
+        self._driver.find_element_by_xpath('//*[@id="content"]/input[2]').click()
+
         

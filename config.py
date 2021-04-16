@@ -1,11 +1,19 @@
 from configparser import RawConfigParser
 
+class TaskConfigError(Exception):
+    pass
+
 class Task(object):
 
     def __init__(self, date, session):
+        if session not in (1, 2, 3):
+            raise TaskConfigError(f"Invalid session ID {session}")
         self.date = date
         self.session = session
         self.finished = False
+
+    def __str__(self):
+        return f"[Task] date: {self.date}, sess:{self.session}"
 
 class TaskList(object):
 
@@ -23,6 +31,13 @@ class TaskList(object):
 
     def __bool__(self):
         return len(self._data) > 0
+
+    def report(self):
+        print("Pending tasks:")
+        for task in self._data:
+            if not task.finished:
+                print(task)
+        print("-" * 5)
 
 
 class Parser(object):
