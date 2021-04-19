@@ -55,6 +55,7 @@ class Client(object):
         self._tasks = None
         self._loop_counter = 0
         self._time_adjustment = None
+        self._loop_time = None
 
     def _get_driver(self):
         webdriver = self._config.get("webdriver", "None")
@@ -78,6 +79,7 @@ class Client(object):
         self._tasks = TaskList(tasks)
 
     def _oauth_login(self, max_retry=3):
+        self._handle_ban()
         print("Trying to login...")
         retry = max_retry
         while retry:
@@ -139,7 +141,8 @@ class Client(object):
         self._driver.find_element_by_id('BtnLogin').click()
         self._sleep_rand()
 
-    def _get_available_session(self):
+    def _get_available_sessions(self):
+        avail_sess = []
         for elem in self._driver.find_elements_by_class_name("CellCar"):
             if elem.text == "无":
                 continue
@@ -149,14 +152,15 @@ class Client(object):
             if not task:
                 continue
             if elem.text == "已约":
-                print(f"Task {sess_date}, {sess_date} is ALREADY DONE.")
+                print(f"Task {sess_date}, {sess_time} is ALREADY DONE.")
                 task.finished = True
                 continue
             else:
                 print(f"Session {sess_date}, {sess_time} is AVAILABLE {elem.text}!")
-                return (elem, task) 
-        print("No available session...")
-        return None
+                avail_sess.append((elem, task))
+        if not avail_sess: 
+            print("No available session...")
+        return avail_sess
 
     def _try_elect(self, elem):
         print(f"Trying to elect...")
@@ -193,40 +197,44 @@ class Client(object):
             
     def execute(self):
         need_login = True
+        max_loop = self._config.get("maxLoop", -1)
+        effective_loops = 0
         while self._tasks:
             try:
                 print(f"{'-'*8} Entering loop {self._loop_counter} {'-'*8}")
-                loop_time = self._check_time()
+                self._check_time()
                 self._sleep_rand()
                 self._tasks.report()
                 if need_login:
                     self._oauth_login()
                     need_login = False
                 self._redirect()
-                avail_sess = self._get_available_session()
-                if avail_sess:
-                    elem, task = avail_sess
+                avail_sess = self._get_available_sessions()
+                for elem, task in avail_sess:
                     success_flag = self._try_elect(elem)
                     if success_flag:
                         task.finished = True
                 self._tasks.remove_finished()
+                effective_loops += 1
                 self._sleep_loop()
-            except KeyboardInterrupt as e:
+            except KeyboardInterrupt:
                 print("KeyboardInterrupt received.")
                 break
             except ClientNeedsLogin:
                 print("Client needs to relogin...")
+                self._driver.quit()
+                time.sleep(0.1)
                 del self._driver
                 self._driver = self._get_driver()
                 need_login = True
             except ServiceUnavailable:
                 print("Service unavailable.")
-                if (7, 30, 0) <= loop_time <= (21, 59, 30):
-                    time.sleep(5)
-                else:
-                    time.sleep(180)
+                self._sleep_unavail()
             finally:
                 self._loop_counter += 1
+                if max_loop > 0 and effective_loops >= max_loop:
+                    print("Max loop {max_loop} exceeded. Terminating...")
+                    break
         else:
             print("Done!")
 
@@ -238,26 +246,39 @@ class Client(object):
         time.sleep(sec*(random()+0.2))
 
     def _sleep_loop(self):
-        time.sleep(self._config.get("refreshinterval", 10))
+        if self._loop_time <= (7, 50, 0):
+            t = 10
+        else:
+            t = self._config.get("refreshinterval", 60)
+        print(f"Main loop sleep {t} sec...")
+        time.sleep(t)
+
+    def _sleep_unavail(self):
+        if (7, 30, 0) <= self._loop_time <= (21, 59, 30):
+            t = 5
+        else:
+            t = 180
+        print(f"Main loop sleep {t} sec...")
+        time.sleep(t)
 
     def _check_time(self, start_time=(7, 35, 5), end_time=(21, 59, 30)):
         server_time = self._get_server_time()
         print(f"Current time: {server_time.strftime('%H:%M:%S')}")
-        server_ts = (server_time.hour, server_time.minute, server_time.second)
-        if not start_time <= server_ts <= end_time:
+        self._loop_time = (server_time.hour, server_time.minute, server_time.second)
+        if not start_time <= self._loop_time <= end_time:
             raise ServiceUnavailable
-        return server_ts
 
     def _get_server_time(self):
         if self._time_adjustment and self._loop_counter % 10 != 0:
             return datetime.now() + self._time_adjustment
         print("Fetching server time...")
         try:
-            local_time = datetime.now()
+            local_time_before = datetime.now()
             resp = requests.get(Client._BASE_URL, timeout=10)
             assert(resp.status_code == 200)
+            local_time_after = datetime.now()
             server_time = datetime.strptime(resp.headers['Date'], "%a, %d %b %Y %H:%M:%S %Z") + timedelta(hours=8)
-            self._time_adjustment = server_time - local_time
+            self._time_adjustment = server_time - (local_time_before+(local_time_after-local_time_before)/2)
             print(f"Time delta: {self._time_adjustment}")
             return server_time
         except TimeoutError:
@@ -292,7 +313,7 @@ class Client(object):
         recognizer = TTShituRecognizer.get_instance()
         valid_elem = self._driver.find_element_by_xpath('//*[@id="content"]/img')    
         img_captcha_base64 = valid_elem.get_attribute("src").split("base64,")[-1]
-        recog_result = recognizer.recognize(base64.b64decode(img_captcha_base64), enhanced=True)
+        recog_result = recognizer.recognize(base64.b64decode(img_captcha_base64), enhanced=True).lower()
         self._driver.find_element_by_id('vcode').send_keys(recog_result)
         self._sleep_rand()
         self._driver.find_element_by_xpath('//*[@id="content"]/input[2]').click()
