@@ -11,6 +11,7 @@ import requests
 from config import TaskList
 from recognizer import TTShituRecognizer
 from config import TaskList
+from wechat import Notifier
 
 from selenium import webdriver
 from selenium.common.exceptions import NoAlertPresentException, TimeoutException
@@ -41,6 +42,9 @@ class ClientNeedsLogin(Exception):
     pass
 
 class ServiceUnavailable(Exception):
+    pass
+
+class ElectFailure(Exception):
     pass
 
 class Client(object):
@@ -184,13 +188,17 @@ class Client(object):
             WebDriverWait(self._driver, 5).until(EC.alert_is_present())
             self._sleep_rand()
             prompt = self._driver.switch_to.alert.text
-            assert prompt == "预约成功!"
+            if prompt != "预约成功!":
+                raise ElectFailure(prompt)
             self._driver.switch_to.alert.dismiss()
             print("Succeeded!")
             return True
         except (NoAlertPresentException, TimeoutException):
             print("Failed!")
             return False
+        except ElectFailure as e:
+            print(f"Elect failed due to {e}...")
+            self._driver.switch_to.alert.dismiss()
         except Exception as e:
             print(f"Exception {e} occured. Try to relogin.")
             raise ClientNeedsLogin
@@ -213,6 +221,8 @@ class Client(object):
                 for elem, task in avail_sess:
                     success_flag = self._try_elect(elem)
                     if success_flag:
+                        if Notifier.enabled():
+                            Notifier.get_instance().notify(task)
                         task.finished = True
                 self._tasks.remove_finished()
                 effective_loops += 1
